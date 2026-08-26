@@ -1,0 +1,131 @@
+export const metadata = {
+  title: "Authentication",
+  description:
+    "API keys, test and live environments, scopes, IP allowlisting, and rotating a key without an outage.",
+  alternates: { canonical: "/docs/authentication" },
+};
+
+# Authentication
+
+Every request to the public API carries an API key as a bearer token.
+
+```bash
+curl https://api.fvas.io/v1/subjects \
+  -H "Authorization: Bearer fvas_live_9f2c8a…"
+```
+
+A missing, malformed, expired, or revoked key returns `401 unauthenticated`. A
+valid key without the required scope returns `403 forbidden`.
+
+## Key format
+
+```text
+fvas_live_9f2c8aK3mN7pQ4rS6tV8wX0yZ1aB2cD3
+└──┬─┘└─┬─┘└──────────────┬──────────────┘
+   │    │                 └── 32 URL-safe characters (~190 bits of entropy)
+   │    └──────────────────── environment: live or test
+   └───────────────────────── product prefix
+```
+
+Keys are stored as a SHA-256 hash. We keep the prefix and last four characters
+for display, which is enough to identify a key in the dashboard and useless to an
+attacker.
+
+<Callout variant="info" title="Why SHA-256 and not bcrypt">
+  This hash is verified on the hot path of every verification. Argon2 at sane
+  parameters costs 50–100 ms — an eighth of the entire latency budget, on every
+  call. A 32-character random secret has no dictionary to attack, so the
+  slow-hash property protects against nothing here. Passwords are a different
+  problem with different input entropy, and those use Argon2id.
+</Callout>
+
+## Test and live
+
+Test mode is a key, not a second base URL.
+
+| | `fvas_test_` | `fvas_live_` |
+| --- | --- | --- |
+| Base URL | Same | Same |
+| Counts toward billing | No | Yes |
+| Appears in dashboard | Yes, behind a banner | Yes |
+| Included in analytics | No | Yes |
+| Webhooks delivered | Yes | Yes |
+
+A separate sandbox host would be a second environment to keep in sync and to
+explain. One schema with an environment flag means the data you see while
+integrating is shaped exactly like the data you will see in production.
+
+## Scopes
+
+Grant a key only what its caller needs.
+
+| Scope | Allows |
+| --- | --- |
+| `subject:read` | List and retrieve subjects |
+| `subject:write` | Create and update subjects |
+| `subject:delete` | Delete a subject and its templates |
+| `enrollment:write` | Enroll a face |
+| `enrollment:read` | Read enrollment attempts |
+| `verification:write` | Run a verification |
+| `verification:read` | Read verification sessions |
+
+A mobile backend that only verifies needs `verification:write` and nothing else.
+If that key leaks, the attacker cannot enroll a new face or delete a subject.
+
+<Callout variant="warning" title="Never ship a key to a browser or mobile binary">
+  Anything shipped to a client can be extracted. Call Fvas from your server, and
+  have your client talk to your server. An API key in a JavaScript bundle is a
+  public API key.
+</Callout>
+
+## IP allowlisting
+
+Live keys accept an optional CIDR allowlist. Requests from outside it are refused
+even with a correct key, which turns a leaked key from a breach into a logged
+failed attempt.
+
+## Rotating a key
+
+Rotation issues a new secret and keeps the old one valid for 24 hours.
+
+```bash
+curl -X POST https://api.fvas.io/v1/console/api-keys/ak_01HQZX…/rotate \
+  -H "Authorization: Bearer <jwt>"
+```
+
+The overlap exists so you can roll a key through a deploy without an outage
+window. Rotation without an overlap is a rotation feature nobody uses — and a
+feature nobody uses is a key nobody rotates.
+
+1. Rotate, and store the new secret
+2. Deploy your services with the new secret
+3. Confirm traffic has moved, using **Last used** in the dashboard
+4. The old secret expires automatically
+
+Revocation, by contrast, is immediate: the very next request returns `401`.
+
+## Rate limits
+
+Limits apply per key and are returned on every response.
+
+```http
+X-RateLimit-Limit: 50
+X-RateLimit-Remaining: 47
+X-RateLimit-Reset: 1753859051
+```
+
+| Endpoint class | Free | Startup | Growth |
+| --- | --- | --- | --- |
+| `POST /v1/verifications` | 10/s | 50/s | 200/s |
+| `POST /v1/enrollments` | 2/s | 10/s | 50/s |
+| Reads | 20/s | 100/s | 300/s |
+
+Exceeding a limit returns `429` with a `Retry-After` header. Back off and retry
+rather than tightening your loop.
+
+## The console API
+
+The dashboard uses a separate surface at `/v1/console`, authenticated with a JWT
+rather than an API key. Keeping the two apart means a stolen API key can never
+reach organization settings, member management, or billing — a boundary that a
+single surface with scope flags would leave one bug away from failing.

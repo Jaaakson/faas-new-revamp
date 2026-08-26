@@ -1,0 +1,122 @@
+export const metadata = {
+  title: "Terms of Service",
+  description:
+    "Acceptable use, your obligations as a data controller, service limitations, and liability.",
+  alternates: { canonical: "/legal/terms" },
+};
+
+# Terms of Service
+
+**Last updated:** 31 July 2026
+
+## 1. The service
+
+Fvas provides face verification over an API: you enroll a subject's face, and we
+compare a later image against it and return a decision with supporting evidence.
+
+## 2. Your obligations
+
+You are the data controller for every subject you enroll. That carries specific
+duties, and they are yours rather than ours.
+
+**You must:**
+
+- Obtain informed, explicit consent from every person whose face you enroll,
+  before enrolling them.
+- Tell them clearly that biometric verification is being used and why.
+- Offer a non-biometric alternative where the law requires one.
+- Keep a consent record and reference it on the subject.
+- Delete subjects when consent is withdrawn or the purpose has ended.
+- Secure your API keys, and rotate them if exposed.
+
+**You must not:**
+
+- Enroll anyone without their knowledge or consent.
+- Use Fvas for surveillance, covert identification, or tracking people who have
+  not consented.
+- Use it to profile or discriminate on race, ethnicity, religion, or any
+  protected characteristic.
+- Enroll minors without verified guardian consent where the law requires it.
+- Attempt to reverse-engineer templates or extract our models.
+- Resell raw API access without a written agreement.
+
+Violating the "must not" list terminates your account without refund. This is not
+boilerplate: biometric misuse is the failure mode that would harm people, and it
+is the one we will act on.
+
+## 3. What this service is not
+
+Stated plainly, because a misunderstanding here has real consequences.
+
+- **Not certified presentation-attack detection.** Fvas ships quality gates,
+  screen-replay heuristics, and an optional active challenge. It is not certified
+  under ISO/IEC 30107-3 and can be defeated by a determined attacker with a
+  prepared video or high-quality artefact.
+- **Not suitable as a sole control for unsupervised remote onboarding** against a
+  motivated adversary. It is designed as a step-up factor within a session you
+  already control.
+- **Not a complete KYC or identity-proofing solution.** No document verification,
+  no watchlist screening.
+- **Not infallible.** Face recognition has a non-zero false accept and false
+  reject rate, and performance varies across demographic groups. You must design
+  a fallback path for legitimate users who fail verification.
+
+You are responsible for deciding whether these properties are acceptable for your
+use case, and for the consequences of that decision.
+
+## 4. Accounts
+
+You must provide accurate information, keep credentials secure, and are
+responsible for activity under your keys. Notify us immediately at
+security@fvas.io if you suspect a compromise.
+
+## 5. Fees
+
+Plans and prices are published on the pricing page. Verifications are billed;
+enrollments are not. Free plans stop at their quota; paid plans continue serving
+and bill overage, because a billing event must never break your login flow.
+
+Fees are non-refundable except where required by law. We will give 30 days'
+notice before a price change.
+
+## 6. Availability
+
+Growth targets 99.5% monthly uptime; Enterprise targets 99.9%. Free and Startup
+plans carry no uptime commitment. Planned maintenance is announced in advance and
+excluded from these figures.
+
+## 7. Intellectual property
+
+We own the service and our software. You own your data. You grant us only the
+licence needed to process your data in order to provide the service — nothing
+broader, and specifically no licence to train models.
+
+## 8. Termination
+
+You may cancel at any time; access continues to the end of the paid period. We
+may suspend an account for non-payment or for violating section 2, with notice
+where circumstances allow.
+
+On termination you can export your data for 30 days, after which all biometric
+data is deleted.
+
+## 9. Warranties and liability
+
+The service is provided "as is". We do not warrant that verification will be
+error-free or uninterrupted.
+
+To the extent permitted by law, our aggregate liability is limited to the fees
+you paid in the 12 months preceding the claim. We are not liable for indirect or
+consequential damages, including losses arising from a false accept or false
+reject.
+
+Nothing here excludes liability that cannot lawfully be excluded.
+
+## 10. Changes
+
+We will give 30 days' notice of material changes by email and in the changelog.
+Continued use after they take effect constitutes acceptance.
+
+## 11. Contact
+
+hello@fvas.io

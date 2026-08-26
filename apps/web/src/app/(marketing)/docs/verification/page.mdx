@@ -1,0 +1,136 @@
+export const metadata = {
+  title: "Verification",
+  description:
+    "Decisions, thresholds, confidence bands, failure reasons, idempotency, and what liveness does and does not cover.",
+  alternates: { canonical: "/docs/verification" },
+};
+
+# Verification
+
+One call, one decision, with the evidence attached.
+
+<VerifySample />
+
+## Decisions
+
+| Decision | Meaning | Your response |
+| --- | --- | --- |
+| `verified` | Similarity met or exceeded the threshold | Allow, possibly with a second factor if confidence is low |
+| `rejected` | A good capture of the wrong person | Deny. This is a real fraud signal |
+| `inconclusive` | No face, several faces, or a failed quality gate | Ask for another capture, showing the reason |
+| `error` | Our pipeline failed | Retry. Not billed, and not your fault |
+
+Branch on `decision`, never on `similarity`. The threshold is configurable, and
+comparing raw scores yourself will silently disagree with the setting your
+organization actually configured.
+
+## Thresholds
+
+The threshold is the security/usability dial. It is a **measurement**, not a
+preference — the shipped defaults come off a plotted FAR/FRR curve, not from
+intuition.
+
+| Preset | Cosine | Use when |
+| --- | --- | --- |
+| Lenient | 0.32 | High volume, low risk — retail check-in |
+| **Balanced** | **0.38** | Default. Calibrated to ≈1e-4 false accept rate |
+| Strict | 0.45 | Financial transactions, admin access |
+| Custom | 0.20 – 0.80 | Growth and above |
+
+Raising the threshold reduces false accepts and increases false rejects. There is
+no setting that reduces both; that is the nature of the trade-off, and anyone
+claiming otherwise is selling something.
+
+A per-request `options.threshold` may only be **stricter** than your
+organization's default. Allowing a request to loosen it would let a compromised
+key quietly weaken the posture you configured.
+
+## Confidence bands
+
+```json
+{ "decision": "verified", "similarity": 0.4102, "threshold": 0.38, "confidence": "low" }
+```
+
+| Band | Condition |
+| --- | --- |
+| `high` | `similarity ≥ threshold + 0.15` |
+| `medium` | `threshold + 0.05 ≤ similarity < threshold + 0.15` |
+| `low` | `threshold ≤ similarity < threshold + 0.05` — verified, but marginal |
+
+A `low` band on a $50,000 transfer is exactly where a second factor belongs. A
+bare boolean throws that signal away; handing it to you turns Fvas from a gate
+into an input to your risk model.
+
+## Failure reasons
+
+| Reason | Decision | What happened |
+| --- | --- | --- |
+| `below_threshold` | `rejected` | A real face, scored below the threshold |
+| `no_face_detected` | `inconclusive` | No face found in the frame |
+| `multiple_faces` | `inconclusive` | More than one person in frame |
+| `low_quality` | `inconclusive` | A quality gate failed; see `quality` |
+| `subject_not_enrolled` | `inconclusive` | The subject exists but has no active profile |
+| `liveness_failed` | `inconclusive` | The active challenge was not satisfied |
+| `model_mismatch` | `error` | Template predates a model upgrade; re-enroll |
+
+## Timing
+
+```json
+"timing": { "total_ms": 284, "detect_ms": 62, "embed_ms": 148, "match_ms": 31 }
+```
+
+Every response carries the breakdown, so our p95 claim is checkable against your
+own traffic rather than a benchmark you have to trust. If `detect_ms` dominates,
+your images are larger than they need to be — downscaling to a 1280 px long edge
+before upload is the single biggest latency win available to you.
+
+## Idempotency
+
+```http
+Idempotency-Key: idem_a91e7c3f
+```
+
+The first response is cached for 24 hours and replayed for repeats of the same
+key. A retried network call must not double-charge your quota or create a second
+session. Use a fresh key per logical attempt, not per HTTP retry.
+
+## Liveness — what is and is not covered
+
+<Callout variant="warning" title="Not certified presentation-attack detection">
+  Fvas ships quality gates, screen-replay and texture heuristics, and an optional
+  active challenge. It is **not** certified under ISO/IEC 30107-3.
+</Callout>
+
+What the current release stops, and what it does not:
+
+| Layer | Stops | Does not stop |
+| --- | --- | --- |
+| Screen-replay heuristics | Casual phone-screen replay | A good screen at the right angle |
+| Texture analysis | Low-quality printed photos | High-quality prints |
+| Active challenge | Static photos, most printed attacks | A prepared video or deepfake |
+
+The consequence for how you deploy it: Fvas is appropriate as a **step-up factor
+inside a session you already control**, where an attacker also needs the account,
+the device, and the session. It is **not** appropriate as the sole control for
+unsupervised remote onboarding against a motivated adversary.
+
+Enable the active challenge in organization settings when the risk justifies the
+extra friction:
+
+```json
+{ "require_liveness": true }
+```
+
+The subject is prompted to blink or turn their head, three frames are captured,
+and all three must match the same identity as well as satisfy the motion.
+
+## Verification history
+
+```bash
+curl "https://api.fvas.io/v1/verifications?decision=rejected&from=2026-07-01T00:00:00Z" \
+  -H "Authorization: Bearer $FVAS_API_KEY"
+```
+
+Every attempt is stored, including failures, with the threshold that was in force
+at the time. A later configuration change never rewrites history — an auditor
+asking about March gets March's answer.

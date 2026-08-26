@@ -1,0 +1,129 @@
+export const metadata = {
+  title: "Privacy Policy",
+  description:
+    "What Fvas collects, what it does not store, how biometric templates are handled, and how deletion works.",
+  alternates: { canonical: "/legal/privacy" },
+};
+
+# Privacy Policy
+
+**Last updated:** 31 July 2026
+
+## 1. Roles
+
+Fvas processes personal data in two distinct capacities, and the distinction
+determines who is responsible for what.
+
+**As a controller**, for our own customers: the people who create a Fvas account,
+log into the dashboard, and are billed. We decide how that data is used.
+
+**As a processor**, for biometric data: the faces of *your* end users, which we
+process only on your instruction. You are the controller. You obtain consent, you
+determine the retention period, and you decide when data is deleted.
+
+## 2. What we collect
+
+### Account data (as controller)
+
+| Data | Purpose | Basis |
+| --- | --- | --- |
+| Name, email, password hash | Authenticate you | Contract |
+| Organization name, plan | Provide and bill the service | Contract |
+| IP address, user agent, login events | Security and abuse prevention | Legitimate interest |
+| Usage counts | Billing and quota enforcement | Contract |
+
+### Biometric data (as processor)
+
+| Data | Retention |
+| --- | --- |
+| **Face templates** — 512-dimension numerical vectors | Until you delete the subject |
+| Quality metrics — sharpness, brightness, pose | Per your log retention setting |
+| Verification records — decision, score, threshold, timestamp | Per your log retention setting |
+| **Raw images** | **Discarded immediately after processing**, unless you explicitly enable retention |
+
+Image retention is off by default and must be enabled deliberately per
+organization.
+
+## 3. What a template is
+
+A face template is a vector of 512 numbers produced by a neural network. It is
+not a photograph and cannot be viewed as one. It is bound to a specific model
+version and is meaningless outside it.
+
+We nevertheless treat templates as **sensitive personal data** in every respect.
+Research into partially reconstructing facial imagery from embeddings exists, and
+"difficult to invert" is not the same as "safe". Access controls, encryption, and
+deletion guarantees are applied on the assumption that a template identifies a
+person — because it does.
+
+## 4. What we never do
+
+- We do not sell personal data.
+- We do not train models on customer data. There is no training pipeline.
+- We do not share biometric data with third parties.
+- We do not use biometric data for any purpose other than the verification you
+  requested and same-tenant duplicate detection.
+- We do not log image bytes, templates, tokens, or API key secrets. A redaction
+  test in our build asserts this.
+
+## 5. Security
+
+- TLS 1.3 in transit; HSTS with preload.
+- AES-256 encryption at rest on database volumes and backups.
+- Passwords hashed with Argon2id; API keys stored as SHA-256 hashes.
+- Least-privilege database access. No standing human access to production data;
+  break-glass access is time-boxed, approved, and logged.
+- Append-only audit logging of every mutating action.
+- Tenant isolation enforced at the data-access layer and verified by automated
+  cross-tenant tests on every endpoint.
+
+Full technical detail is published in our public repository rather than
+summarised here, so it can be independently checked.
+
+## 6. Deletion
+
+Deleting a subject **physically removes** its template rows. It is not a flag — a
+soft-deleted biometric template is still retained biometric data, which defeats
+the purpose of the request.
+
+| Data | On deletion |
+| --- | --- |
+| Face templates | Removed immediately |
+| Retained images, if enabled | Removed immediately |
+| Verification history | Retained for audit, with biometric fields removed |
+| Backups | Rotated out within 30 days |
+
+Closing your account removes all associated biometric data within 30 days.
+
+## 7. International transfers and residency
+
+Data is processed in the region configured for your organization. The default is
+`ap-southeast`. Cross-region transfer does not happen without an explicit
+configuration change by you.
+
+## 8. Your rights
+
+Under GDPR, UU PDP No. 27/2022, and comparable regimes, individuals may request
+access, correction, deletion, restriction, portability, and objection.
+
+If you are an **end user** of a company that uses Fvas, contact that company —
+they are the controller and hold your consent record. We will support them in
+responding, but we cannot act on your data without their instruction.
+
+If you are a **Fvas account holder**, email hello@fvas.io.
+
+## 9. Sub-processors
+
+We use infrastructure providers for hosting, database, and email delivery. A
+current list is available on request, and we will give notice before adding a
+sub-processor that handles biometric data.
+
+## 10. Changes
+
+Material changes will be announced by email and in the changelog before taking
+effect.
+
+## 11. Contact
+
+- General and privacy: hello@fvas.io
+- Security vulnerabilities: security@fvas.io — never a public channel

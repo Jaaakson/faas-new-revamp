@@ -1,0 +1,237 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   Design tokens — docs/04-design-system.md §2
+
+   Colors are OKLCH. Perceptual uniformity means a lightness step is a visually
+   equal step, which is what lets the dark theme be derived rather than
+   hand-tuned per swatch — the only way 60+ tokens stay consistent.
+
+   Components consume tokens, never raw values. A theme change is a change to
+   this file alone.
+   ========================================================================== */
+
+:root {
+  /* Surfaces */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.208 0.042 265.755);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.208 0.042 265.755);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+
+  /* Brand — indigo, not generic blue: it holds hue against both a white and a
+     near-black surface, and reads as deliberate rather than default. */
+  --primary: oklch(0.511 0.262 276.966);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+
+  /* Semantic */
+  --success: oklch(0.596 0.145 163.225);
+  --success-foreground: oklch(0.984 0.003 247.858);
+  --warning: oklch(0.666 0.179 58.318);
+  --warning-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --info: oklch(0.609 0.126 221.723);
+  --info-foreground: oklch(0.984 0.003 247.858);
+
+  /* Lines & focus */
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.511 0.262 276.966);
+
+  /* Data visualization — ordered for categorical use */
+  --chart-1: oklch(0.511 0.262 276.966);
+  --chart-2: oklch(0.596 0.145 163.225);
+  --chart-3: oklch(0.609 0.126 221.723);
+  --chart-4: oklch(0.666 0.179 58.318);
+  --chart-5: oklch(0.627 0.265 303.9);
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+
+  /* Every brand and semantic color lifts in lightness for a near-black
+     surface. Keeping the light-mode value would fail contrast — the most
+     common dark-mode bug in dashboard products. */
+  --primary: oklch(0.673 0.182 276.935);
+  --primary-foreground: oklch(0.129 0.042 264.695);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+
+  --success: oklch(0.696 0.17 162.48);
+  --success-foreground: oklch(0.129 0.042 264.695);
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.129 0.042 264.695);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.129 0.042 264.695);
+  --info: oklch(0.715 0.143 215.221);
+  --info-foreground: oklch(0.129 0.042 264.695);
+
+  /* Shadow is invisible on a near-black surface, so elevation is carried by a
+     lifted surface plus a hairline white border instead. */
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.673 0.182 276.935);
+
+  --chart-1: oklch(0.673 0.182 276.935);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.715 0.143 215.221);
+  --chart-4: oklch(0.769 0.188 70.08);
+  --chart-5: oklch(0.714 0.203 305.504);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Nested elements always step down: a card at lg contains a button at md.
+     Equal nested radii look optically wrong. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Accordion height animation. Radix publishes the measured content height as
+     --radix-accordion-content-height, which is what makes animating to `auto`
+     possible at all. */
+  --animate-accordion-down: accordion-down 200ms ease-out;
+  --animate-accordion-up: accordion-up 200ms ease-out;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+
+  /* Proportional figures make a column of latencies impossible to compare
+     vertically. Every numeric surface opts into tabular figures. */
+  .tabular-figures,
+  table td,
+  table th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Never remove a focus indicator without replacing it. */
+  :focus-visible {
+    @apply ring-ring outline-none ring-2 ring-offset-2;
+    --tw-ring-offset-color: var(--background);
+  }
+}
+
+/* Shiki dual-theme.
+   `defaultColor: false` puts both palettes on every token as custom properties;
+   these two rules pick one. Switching themes is then a class change with no
+   re-highlight and no duplicated markup. */
+.shiki,
+.shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
+}
+
+.dark .shiki,
+.dark .shiki span {
+  color: var(--shiki-dark);
+  background-color: transparent;
+}
+
+/* Heading anchors injected by rehype-autolink-headings wrap the heading text.
+   Keep them inheriting the heading's own styling rather than looking like links. */
+.heading-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.heading-anchor:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Motion explains a relationship or it does not ship — and it is always
+   suppressible. docs/04-design-system.md §7 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

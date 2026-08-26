@@ -1,0 +1,155 @@
+export const metadata = {
+  title: "Best practices",
+  description:
+    "How to integrate face authentication without building a system that is technically correct and practically unusable.",
+  alternates: { canonical: "/docs/best-practices" },
+};
+
+# Best practices
+
+Most integration problems are not API problems. They are decisions about where
+face authentication sits in your product, and they are much cheaper to get right
+before launch than after.
+
+## Treat it as a factor, not the factor
+
+Fvas ships **heuristic** presentation-attack detection, not certified PAD. It
+catches a face held up on a phone screen and a low-quality print. It does not
+catch a good screen at the right angle, a high-quality print, a prepared video,
+or a deepfake.
+
+That makes it appropriate as a **step-up factor in a supervised or
+semi-supervised context** — where the attacker also needs the account, the
+device, and the session. It is **not** appropriate as the sole control for
+unsupervised remote onboarding against a motivated adversary.
+
+<Callout variant="warning" title="This is a scoping statement, not a disclaimer">
+  If your threat model includes a determined remote attacker with a printer and a
+  4K monitor, you need certified PAD, and you should not ship this as your only
+  control. We would rather tell you now than have you find out in an incident.
+</Callout>
+
+## Handle three outcomes, not two
+
+The single most common integration bug is treating `inconclusive` as
+`rejected`.
+
+```js
+// Wrong. Tells someone with a dirty lens that they are an impostor.
+if (result.decision !== "verified") denyAccess();
+
+// Right.
+switch (result.decision) {
+  case "verified":    grantAccess(result.confidence); break;
+  case "rejected":    denyAndLogPossibleFraud();      break;
+  case "inconclusive": showGuidanceAndRetry(result.guidance); break;
+}
+```
+
+Beyond the user-facing harm, collapsing the two poisons your own fraud metrics:
+a spike in bad lighting will look exactly like a spike in attacks.
+
+## Use the confidence band
+
+A boolean throws away information your risk engine can use. Every `verified`
+result carries a band relative to the threshold that produced it:
+
+| Band | Margin above threshold | Suggested response |
+| --- | --- | --- |
+| `high` | ≥ 0.15 | Proceed. |
+| `medium` | 0.05 – 0.15 | Proceed for ordinary actions. |
+| `low` | 0 – 0.05 | Verified, but marginal. Step up for anything valuable. |
+
+A `low` band on a password change or a large transfer is exactly where a second
+factor earns its cost.
+
+## Enroll well, once
+
+Verification accuracy is decided at enrollment. A profile built from three
+careless frames will produce false rejections forever, and no threshold tuning
+will fix it.
+
+- **Three captures, mild angle variation.** Straight on, slightly left, slightly
+  right. "Slightly" matters — past about 25° the pose gate rejects the frame.
+- **Show the per-frame feedback.** Every response carries `images[].guidance`
+  even on success. Use it; it is how someone learns their lighting is marginal
+  before it becomes a support ticket.
+- **Re-enroll after a significant appearance change.** New glasses are fine. A
+  beard grown out over six months is worth a fresh profile.
+
+## Do not tune the threshold blindly
+
+The presets carry measured error rates from a real calibration run. A custom
+threshold does not — we report nothing rather than a reassuring zero, because we
+have not measured it.
+
+| Preset | Threshold | FAR | FRR |
+| --- | --- | --- | --- |
+| Lenient | 0.32 | 1.0×10⁻⁵ | 2.73% |
+| **Balanced** | **0.38** | **8.0×10⁻⁶** | **3.06%** |
+| Strict | 0.45 | 8.0×10⁻⁶ * | 4.21% |
+
+\* Identical to Balanced because 500,000 impostor pairs cannot resolve a lower
+rate. Strict is defence in depth; its extra benefit is **unmeasured**, not zero.
+
+If false rejections are hurting you, look at capture quality before the
+threshold. Loosening the threshold trades security for a problem better fixed
+with better lighting.
+
+## Retry safely
+
+Send an `Idempotency-Key` on every verification. Network timeouts are the normal
+case at scale, and without one a retry costs you a second charge and produces a
+second session row.
+
+```js
+headers: { "Idempotency-Key": crypto.randomUUID() }
+```
+
+The first response is replayed for 24 hours. Reuse the same key for the same
+logical attempt; generate a new one for a genuinely new attempt.
+
+## Scope your keys narrowly
+
+A key that can only verify cannot delete your subjects. Create one key per
+integration with only the scopes that integration needs, rather than one key
+everywhere:
+
+- The blast radius of a leak is what you scoped, not your whole account.
+- `last_used_at` tells you which keys are actually live, so retiring an old one
+  is not a guess.
+
+Rotate on a schedule. **Rotate** keeps the old key alive for 24 hours so you can
+redeploy; **revoke** takes effect on the next request and is what you want when
+a key is known to be compromised.
+
+## Store your own consent record
+
+You are the data controller; we are the processor. Pass `consent_reference` when
+you create a subject so the link between your consent record and our biometric
+data is explicit rather than reconstructed later under audit pressure.
+
+## Delete when you should
+
+`DELETE /v1/subjects/{id}` physically destroys the templates — there is no soft
+delete for biometric data. Wire it to your own account-deletion flow now rather
+than discovering during a subject-access request that you have no way to honour
+one.
+
+## Verify webhook signatures
+
+Every webhook is signed. Verify it, and use a constant-time comparison — a plain
+`==` leaks how many bytes matched. Dedupe on `Fvas-Event-Id`: delivery is
+at-least-once, and we say so plainly rather than implying a guarantee we cannot
+make.
+
+<WebhookVerifySample />
+
+## Monitor the things that move first
+
+- **Inconclusive rate.** Rising means your capture environment degraded — a new
+  device, a new location, a changed camera.
+- **p95 latency.** Ours, not yours; the timing breakdown in each response splits
+  detect, embed, and match.
+- **Quota burn.** We notify at 80% and 100%, but a sudden change in slope is
+  worth knowing about earlier.

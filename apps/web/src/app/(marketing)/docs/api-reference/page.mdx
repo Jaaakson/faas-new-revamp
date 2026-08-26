@@ -1,0 +1,185 @@
+export const metadata = {
+  title: "API reference",
+  description:
+    "Every public endpoint: subjects, enrollments, verifications — with request and response shapes, pagination, and conventions.",
+  alternates: { canonical: "/docs/api-reference" },
+};
+
+# API reference
+
+Base URL:
+
+```text
+https://api.fvas.io/v1
+```
+
+Interactive documentation is generated from the implementation itself, so it
+cannot drift from the running code:
+
+```text
+https://api.fvas.io/docs        Swagger UI
+https://api.fvas.io/openapi.json
+```
+
+## Conventions
+
+| | |
+| --- | --- |
+| Format | JSON only, `snake_case` keys |
+| Timestamps | RFC 3339, UTC, always with a `Z` suffix |
+| IDs | Prefixed ULIDs — `sub_`, `fp_`, `vs_`, `enr_`, `ak_` |
+| Methods | `GET` read · `POST` create · `PATCH` partial update · `DELETE` remove |
+| Images | Base64 in JSON, or `multipart/form-data` |
+
+`PUT` is not used. Partial update is the realistic case, and having one update
+verb removes the ambiguity of "does this replace the whole object?"
+
+## Pagination
+
+Cursor-based, never offset:
+
+```bash
+curl "https://api.fvas.io/v1/subjects?limit=20&cursor=eyJpIjoic3ViXzAx…" \
+  -H "Authorization: Bearer $FVAS_API_KEY"
+```
+
+```json
+{
+  "data": [],
+  "pagination": { "next_cursor": "eyJpIjoi…", "has_more": true, "limit": 20 }
+}
+```
+
+Offset pagination skips and duplicates rows on tables that receive continuous
+inserts — which describes every log table here. The cursor is opaque: read
+`next_cursor`, pass it back, and never construct one yourself.
+
+Default `limit` is 20, maximum 100.
+
+## Subjects
+
+| Method | Path | Scope |
+| --- | --- | --- |
+| `POST` | `/v1/subjects` | `subject:write` |
+| `GET` | `/v1/subjects` | `subject:read` |
+| `GET` | `/v1/subjects/{id}` | `subject:read` |
+| `PATCH` | `/v1/subjects/{id}` | `subject:write` |
+| `DELETE` | `/v1/subjects/{id}` | `subject:delete` |
+
+`{id}` accepts either a Fvas ID (`sub_01HQZX…`) or your own identifier prefixed
+with `ext_` (`ext_user_84213`).
+
+```json
+{
+  "id": "sub_01HQZX8K4M2N7P",
+  "external_id": "user_84213",
+  "display_name": "Rani Wulandari",
+  "status": "enrolled",
+  "metadata": { "tier": "premium" },
+  "consent_reference": "consent_2026_07_30_84213",
+  "verification_count": 47,
+  "enrolled_at": "2026-07-30T07:22:41Z",
+  "last_verified_at": "2026-07-31T02:11:08Z",
+  "created_at": "2026-07-30T07:22:08Z"
+}
+```
+
+`status` is `pending` before enrollment, `enrolled` after, `suspended` when you
+disable it. `metadata` is yours, capped at 8 KB.
+
+Filter the list with `status`, `external_id`, `from`, and `to`.
+
+## Enrollments
+
+| Method | Path | Scope |
+| --- | --- | --- |
+| `POST` | `/v1/enrollments` | `enrollment:write` |
+| `GET` | `/v1/enrollments` | `enrollment:read` |
+| `GET` | `/v1/enrollments/{id}` | `enrollment:read` |
+| `DELETE` | `/v1/subjects/{id}/face-profile` | `enrollment:delete` |
+
+```json
+{
+  "subject_id": "sub_01HQZX8K4M2N7P",
+  "images": ["<base64>", "<base64>", "<base64>"],
+  "options": { "check_duplicates": true, "min_quality": 0.6 }
+}
+```
+
+Accepts 1–5 images; 3 recommended. Failed attempts are recorded too — failure
+rates are a product signal, not noise.
+
+See [Subjects & enrollment](/docs/enrollment) for the quality gates and duplicate
+handling.
+
+## Verifications
+
+| Method | Path | Scope |
+| --- | --- | --- |
+| `POST` | `/v1/verifications` | `verification:write` |
+| `GET` | `/v1/verifications` | `verification:read` |
+| `GET` | `/v1/verifications/{id}` | `verification:read` |
+
+```json
+{
+  "subject_id": "sub_01HQZX8K4M2N7P",
+  "image": "<base64 jpeg>",
+  "options": { "threshold": 0.42, "require_liveness": false }
+}
+```
+
+```json
+{
+  "id": "vs_01HQZXA4B6C8",
+  "decision": "verified",
+  "subject_id": "sub_01HQZX8K4M2N7P",
+  "similarity": 0.8121,
+  "threshold": 0.42,
+  "confidence": "high",
+  "quality": {
+    "sharpness": 0.86,
+    "brightness": 0.71,
+    "face_size_px": 214,
+    "pose": { "yaw": -4.2, "pitch": 1.8, "roll": 0.4 }
+  },
+  "templates_compared": 3,
+  "timing": { "total_ms": 284, "detect_ms": 62, "embed_ms": 148, "match_ms": 31 },
+  "created_at": "2026-07-30T07:24:11Z"
+}
+```
+
+Filter the list with `decision`, `subject_id`, `api_key_id`, `from`, and `to`.
+
+Full semantics in [Verification](/docs/verification).
+
+## Headers
+
+**Send:**
+
+| Header | Purpose |
+| --- | --- |
+| `Authorization` | `Bearer fvas_live_…` — required |
+| `Content-Type` | `application/json` or `multipart/form-data` |
+| `Idempotency-Key` | Deduplicates retries for 24 hours |
+| `X-Request-ID` | Your own trace ID; echoed back |
+
+**Receive:**
+
+| Header | Purpose |
+| --- | --- |
+| `X-Request-ID` | Quote this in support requests |
+| `X-RateLimit-Remaining` | Requests left in the window |
+| `Retry-After` | Seconds to wait, on a `429` |
+
+## Console API
+
+The dashboard uses `/v1/console`, authenticated with a JWT rather than an API
+key. It is internal and may change with the frontend, so it carries no stability
+guarantee — build against the public API above.
+
+## Versioning
+
+Breaking changes go to `/v2`, with a minimum 12-month overlap and `Sunset`
+headers on the old surface. Additive changes — new fields, new optional
+parameters, new enum members — ship without a version bump, so parse defensively
+and ignore fields you do not recognise.

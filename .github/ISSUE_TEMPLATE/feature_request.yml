@@ -1,0 +1,82 @@
+name: Feature request
+description: Propose a capability or an improvement
+title: "[Feature]: "
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: check [docs/10-roadmap.md](../blob/main/docs/10-roadmap.md).
+        Several things are deliberately out of scope for the MVP, with the reasoning
+        written down in [docs/01-prd.md](../blob/main/docs/01-prd.md#52-out-of-scope--mvp-with-rationale).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What can't be done today, and who is blocked by it. Describe the problem,
+        not the solution — a well-described problem often has a better solution
+        than the one that comes to mind first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: persona
+    attributes:
+      label: Who needs this
+      options:
+        - Integrating engineer
+        - Engineering manager
+        - Compliance / risk officer
+        - End user being verified
+        - Internal / maintainer
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Console / dashboard
+        - Marketing site
+        - Public API
+        - Face recognition pipeline
+        - Authentication / RBAC
+        - Security / compliance
+        - Docs
+        - Infrastructure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else would solve this, and why is the proposal better?
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: >
+        Does this touch biometric data, tenant isolation, the public API contract,
+        or a security control? Say so here — it changes how the change gets reviewed.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap
+          required: true
+        - label: This is not already listed as deliberately out of scope
+          required: true

@@ -1,0 +1,126 @@
+export const metadata = {
+  title: "Webhooks",
+  description:
+    "Event types, HMAC signature verification, retry behaviour, and why you must deduplicate on the event ID.",
+  alternates: { canonical: "/docs/webhooks" },
+};
+
+# Webhooks
+
+Webhooks push events to your server as they happen, so you do not have to poll.
+
+## Events
+
+| Event | Fires when |
+| --- | --- |
+| `verification.completed` | A verification produced a decision, including a rejection |
+| `verification.failed` | The pipeline errored — not a rejection |
+| `enrollment.completed` | A face profile was created |
+| `enrollment.duplicate_detected` | An enrollment matched an existing subject |
+| `subject.deleted` | A subject and its templates were deleted |
+| `quota.threshold_reached` | Usage crossed 80% or 100% of plan quota |
+
+## Payload
+
+```json
+{
+  "id": "evt_01HQZXB4D6F8",
+  "type": "verification.completed",
+  "created_at": "2026-07-30T07:24:11Z",
+  "data": {
+    "id": "vs_01HQZXA4B6C8",
+    "subject_id": "sub_01HQZX8K4M2N7P",
+    "decision": "verified",
+    "similarity": 0.8121,
+    "threshold": 0.38,
+    "confidence": "high"
+  }
+}
+```
+
+## Verify the signature
+
+Every delivery carries a signature header:
+
+<WebhookVerifySample />
+
+The signature is HMAC-SHA256 over `{timestamp}.{raw_body}`, using your endpoint's
+signing secret.
+
+```ts
+import crypto from "node:crypto";
+
+export function verifySignature(rawBody: string, header: string, secret: string) {
+  const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
+
+  // The timestamp is inside the signed payload, so a captured request cannot be
+  // replayed later. Reject anything older than five minutes.
+  if (Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) return false;
+
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${parts.t}.${rawBody}`)
+    .digest("hex");
+
+  // Constant-time comparison: a plain === leaks the correct prefix through
+  // response timing.
+  return crypto.timingSafeEqual(Buffer.from(parts.v1), Buffer.from(expected));
+}
+```
+
+<Callout variant="danger" title="Sign the raw body, not the parsed object">
+  `JSON.stringify(req.body)` will not reproduce the exact bytes we signed — key
+  order and whitespace differ. Capture the raw body before any JSON middleware
+  touches it, or every signature check will fail.
+</Callout>
+
+## Respond quickly
+
+Return `2xx` within 10 seconds. Anything slower is treated as a failure and
+retried.
+
+Do the minimum in the handler — verify, enqueue, acknowledge:
+
+```ts
+app.post("/webhooks/fvas", async (req, res) => {
+  if (!verifySignature(req.rawBody, req.headers["fvas-signature"], SECRET)) {
+    return res.status(400).send("invalid signature");
+  }
+
+  await queue.add("fvas-event", req.body);   // real work happens elsewhere
+  res.status(200).send("ok");
+});
+```
+
+## Retries and deduplication
+
+Failed deliveries retry 8 times with exponential backoff across roughly 24 hours.
+After 20 consecutive failures the endpoint is disabled automatically and you are
+notified.
+
+Delivery is **at-least-once**. A network timeout after your server committed but
+before we recorded the response produces a duplicate — so deduplicate on
+`Fvas-Event-Id`:
+
+```ts
+if (await seen(eventId)) return res.status(200).send("duplicate");
+await markSeen(eventId);
+```
+
+This is stated here rather than buried in a footnote because handlers that assume
+exactly-once delivery fail in production, not in testing.
+
+## Ordering
+
+Events are not guaranteed to arrive in order. Use `created_at` on the payload if
+sequence matters, rather than assuming arrival order reflects it.
+
+## Local development
+
+A webhook cannot reach `localhost`. Use a tunnel during development, and use the
+**Send test event** button in the dashboard to exercise your handler without
+running a real verification.
+
+URLs pointing at private, loopback, or link-local addresses are rejected at
+registration — an SSRF protection, and the reason your `http://192.168.x.x`
+endpoint will not save.

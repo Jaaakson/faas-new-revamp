@@ -1,0 +1,107 @@
+name: Bug report
+description: Something isn't working as documented
+title: "[Bug]: "
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report.
+
+        **Security issue?** Don't file it here — email `security@fvas.io` instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: A clear description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+
+  - type: input
+    id: request_id
+    attributes:
+      label: Request ID
+      description: >
+        If the API was involved, paste the `request_id` from the error response
+        or the `X-Request-ID` header. This usually resolves the report in one query.
+      placeholder: req_01HQZX8K4M2N
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Console / dashboard
+        - Marketing site
+        - Public API
+        - Face capture / camera
+        - Enrollment
+        - Verification
+        - Authentication
+        - Docs
+        - Infrastructure / deployment
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - p0 — production down or data at risk
+        - p1 — a core flow is broken, no workaround
+        - p2 — broken with a workaround
+        - p3 — minor or cosmetic
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - Deployment: local / staging / production
+        - Browser + version:
+        - OS:
+        - Camera/device (if capture-related):
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, errors, or screenshots
+      description: >
+        Redact any API keys, tokens, or personal data before pasting.
+        Never attach a photo of a real person's face.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: I redacted all secrets and personal data
+          required: true

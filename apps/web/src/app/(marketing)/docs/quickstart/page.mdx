@@ -1,0 +1,144 @@
+export const metadata = {
+  title: "Quickstart",
+  description:
+    "From signup to a verified response in under ten minutes, using only the API.",
+  alternates: { canonical: "/docs/quickstart" },
+};
+
+# Quickstart
+
+You will create a subject, enroll a face, and verify it — three requests, no SDK
+required. Budget about ten minutes.
+
+<Callout variant="tip" title="Prefer clicking to typing?">
+  Everything below is also available from the dashboard, including a guided camera
+  capture. The two paths produce identical data.
+</Callout>
+
+## 1. Get a test key
+
+Create an account, and the onboarding flow hands you a test key on the last step.
+Test keys are prefixed `fvas_test_` and write to the same schema behind an
+environment flag — the data shows up in your dashboard with a "Test mode" banner
+and never touches billing or production analytics.
+
+```bash
+export FVAS_API_KEY="fvas_test_9f2c8a…"
+```
+
+<Callout variant="warning" title="The key is shown once">
+  Store it in a secret manager immediately. We keep only a hash, so a lost key has
+  to be rotated rather than recovered.
+</Callout>
+
+## 2. Create a subject
+
+A **subject** is one of your end users — the person whose face you will verify.
+You identify them with your own `external_id`, so nothing in your database has to
+change.
+
+<CreateSubjectSample />
+
+```json
+{
+  "id": "sub_01HQZX8K4M2N7P",
+  "external_id": "user_84213",
+  "status": "pending",
+  "verification_count": 0,
+  "created_at": "2026-07-30T07:22:08Z"
+}
+```
+
+Status stays `pending` until a face is enrolled.
+
+`consent_reference` points at your own proof that this person agreed to biometric
+processing. You are the data controller; Fvas is the processor. The field makes
+that boundary explicit rather than implied.
+
+## 3. Enroll a face
+
+Send one to five images. Three is recommended: multiple templates covering
+slightly different poses measurably reduce false rejection later, and enrollment
+happens once while verification happens thousands of times.
+
+<EnrollSample />
+
+```json
+{
+  "id": "enr_01HQZX9M2P4Q",
+  "status": "succeeded",
+  "face_profile": {
+    "id": "fp_01HQZX9M2P4R",
+    "version": 1,
+    "template_count": 3,
+    "avg_quality_score": 0.842
+  },
+  "images": [
+    { "index": 0, "accepted": true, "quality_score": 0.871 },
+    { "index": 1, "accepted": true, "quality_score": 0.834 },
+    { "index": 2, "accepted": true, "quality_score": 0.821 }
+  ],
+  "latency_ms": 612
+}
+```
+
+Per-image results come back even on success, because a capture UI needs to know
+*which* frame was weak in order to coach the user.
+
+The images themselves are discarded once the templates are computed. Retention is
+opt-in per organization and off by default.
+
+## 4. Verify
+
+<VerifySample />
+
+```json
+{
+  "id": "vs_01HQZXA4B6C8",
+  "decision": "verified",
+  "similarity": 0.8121,
+  "threshold": 0.38,
+  "confidence": "high",
+  "templates_compared": 3,
+  "timing": { "total_ms": 284, "detect_ms": 62, "embed_ms": 148, "match_ms": 31 },
+  "created_at": "2026-07-30T07:24:11Z"
+}
+```
+
+That is the whole integration.
+
+## Handling the response
+
+Branch on `decision`, never on `similarity` — the threshold is configurable and
+comparing raw scores yourself will silently disagree with your own settings.
+
+```ts
+switch (result.decision) {
+  case "verified":
+    // `confidence` is "high" | "medium" | "low". A low-confidence pass on a
+    // high-value action is exactly where a second factor belongs.
+    return result.confidence === "low" ? requestSecondFactor() : allow();
+
+  case "rejected":
+    // A good capture of the wrong person. This belongs in your fraud metrics.
+    return deny(result.failure_reason);
+
+  case "inconclusive":
+    // A capture problem, not a fraud signal. Ask the user to try again and
+    // show them the reason.
+    return retry(result.failure_reason);
+}
+```
+
+<Callout variant="info" title="Why three outcomes">
+  Collapsing `inconclusive` into `rejected` tells a user "you are not who you say
+  you are" when the truth is "the room is too dark" — and it pollutes your fraud
+  metrics with lighting problems.
+</Callout>
+
+## Next steps
+
+- [Authentication](/docs/authentication) — scopes, environments, and key rotation
+- [Subjects & enrollment](/docs/enrollment) — quality gates and duplicate detection
+- [Verification](/docs/verification) — thresholds, confidence, and failure reasons
+- [Errors](/docs/errors) — the error envelope and every code

@@ -1,0 +1,130 @@
+export const metadata = {
+  title: "Rate limits & quotas",
+  description:
+    "Two independent limits — requests per second, and verifications per month. What each one does when you hit it, and how to back off correctly.",
+  alternates: { canonical: "/docs/rate-limits" },
+};
+
+# Rate limits & quotas
+
+Two limits apply, and they are independent. Hitting one tells you nothing about
+the other.
+
+| | What it protects | Window | Response when exceeded |
+| --- | --- | --- | --- |
+| **Rate limit** | Us, from bursts | Per second | `429`, retry in ~1 s |
+| **Monthly quota** | Your bill | Calendar month | `429` on Free; billed as overage on paid plans |
+
+## Rate limits
+
+A token bucket per organization, refilled continuously. A burst up to the bucket
+size is fine; a sustained rate above it is not.
+
+| Endpoint class | Free | Startup | Growth |
+| --- | --- | --- | --- |
+| `POST /v1/verifications` | 10/s | 50/s | 200/s |
+| `POST /v1/enrollments` | 2/s | 10/s | 50/s |
+| Reads | 20/s | 100/s | 300/s |
+
+Every response carries the current state, so you never have to guess:
+
+```http
+X-RateLimit-Limit: 200
+X-RateLimit-Remaining: 187
+X-RateLimit-Reset: 0
+```
+
+On a `429` you also get `Retry-After`, in seconds. **Honour it.** Retrying
+sooner cannot succeed — the bucket has not refilled — and only adds load.
+
+<Callout variant="tip" title="Back off with jitter">
+  If a hundred clients all retry after exactly one second, you have rebuilt the
+  burst that got you limited. Add random jitter: `Retry-After + random(0, 1s)`.
+</Callout>
+
+## Monthly quota
+
+Counted per calendar month, in UTC, and reset at the start of the next one.
+
+| Plan | Verifications / month | At 100% |
+| --- | --- | --- |
+| Free | 1,000 | **Hard stop.** Requests return `429` until the month rolls over. |
+| Startup | 25,000 | Keeps serving. Overage billed at $0.004 each. |
+| Growth | 150,000 | Keeps serving. Overage billed at $0.002 each. |
+| Enterprise | Negotiated | Keeps serving. |
+
+Paid plans do not hard-stop, deliberately. Breaking a paying customer's login
+flow over a billing event would be a far worse failure than an unexpected
+invoice line.
+
+A quota `429` carries a `Retry-After` measured in **days**, not seconds — the
+number of seconds until the month actually rolls over. Do not retry in a loop
+against it.
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Monthly verification quota of 1,000 exhausted on the free plan.",
+    "details": { "used": 1000, "limit": 1000, "plan": "free" }
+  }
+}
+```
+
+## What counts against your quota
+
+| Decision | Charged | Why |
+| --- | :-: | --- |
+| `verified` | ✓ | You got an answer. |
+| `rejected` | ✓ | You got an answer. |
+| `inconclusive` | ✓ | We ran the models; the frame was unusable. |
+| `error` | — | Our failure. You should not pay for our bug. |
+
+A replayed **`Idempotency-Key`** is charged once, no matter how many times it is
+sent. That is the whole point: a retried network call must not double-charge
+you.
+
+Test keys (`fvas_test_…`) are **never** charged. Experiment freely.
+
+## Checking your usage
+
+```bash
+curl ${"`"}https://api.fvas.io/v1/console/usage/current${"`"} \
+  -H "Authorization: Bearer $CONSOLE_JWT"
+```
+
+```json
+{
+  "plan": "growth",
+  "used": 48213,
+  "limit": 150000,
+  "remaining": 101787,
+  "percentage": 32.1,
+  "hard_stop": false,
+  "days_remaining": 12
+}
+```
+
+The dashboard shows the same figure, and we send a notification at 80% and at
+100% so a surprise is impossible.
+
+## Handling both correctly
+
+The two limits need different responses, and one `catch (429)` for both is the
+mistake that turns a busy afternoon into an outage:
+
+```js
+if (response.status === 429) {
+  const wait = Number(response.headers.get("Retry-After") ?? 1);
+
+  if (wait > 3600) {
+    // Monthly quota. Retrying will not help for days — alert, do not loop.
+    await notifyOps("Fvas quota exhausted");
+    return fallbackToSecondFactor();
+  }
+
+  // Rate limit. Short, transient, safe to retry with jitter.
+  await sleep((wait + Math.random()) * 1000);
+  return retry();
+}
+```

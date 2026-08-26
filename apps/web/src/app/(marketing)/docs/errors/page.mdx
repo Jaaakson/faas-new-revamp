@@ -1,0 +1,119 @@
+export const metadata = {
+  title: "Errors",
+  description:
+    "The uniform error envelope, every status code, every error code, and how to retry correctly.",
+  alternates: { canonical: "/docs/errors" },
+};
+
+# Errors
+
+Every non-2xx response has the same shape. There is no second format to handle.
+
+```json
+{
+  "error": {
+    "code": "quality_check_failed",
+    "message": "Face is too small in the frame.",
+    "details": { "check": "min_face_size", "value": 78, "required": 112 },
+    "request_id": "req_01HQZX8K4M2N"
+  }
+}
+```
+
+| Field | Contract |
+| --- | --- |
+| `code` | Stable and machine-readable. **Branch on this.** |
+| `message` | Human-readable. May change without notice — never parse it |
+| `details` | Structured context, shape depends on the code |
+| `request_id` | Also returned as `X-Request-ID`. Quote it in support requests |
+
+<Callout variant="info" title="A rejected verification is not an error">
+  "This is not the right person" is a successful answer to the question you
+  asked, so it is a `200` with `"decision": "rejected"`. Only a failed *request*
+  produces the envelope above. Conflating the two forces awkward error handling
+  around a normal business outcome.
+</Callout>
+
+## Status codes
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | `invalid_request` | Malformed body, bad image encoding, failed validation |
+| `401` | `unauthenticated` | Missing, malformed, expired, or revoked key |
+| `403` | `forbidden` | Valid key, insufficient scope |
+| `404` | `not_found` | Does not exist — **or belongs to another tenant** |
+| `409` | `conflict` | `external_id` already exists, or a duplicate face was detected |
+| `413` | `payload_too_large` | Image over 8 MB |
+| `422` | `unprocessable_entity` | Schema-valid but semantically invalid |
+| `429` | `rate_limited` | Too many requests. Honour `Retry-After` |
+| `500` | `internal_error` | Our fault. Retry, and quote the `request_id` |
+| `503` | `service_unavailable` | Temporarily degraded. Retry with backoff |
+
+<Callout variant="info" title="Why a cross-tenant read returns 404">
+  A `403` would confirm the resource exists, which leaks information across the
+  tenant boundary. A resource you cannot see is indistinguishable from one that
+  does not exist.
+</Callout>
+
+## Error codes
+
+### Validation
+
+| Code | Cause |
+| --- | --- |
+| `invalid_request` | The body failed schema validation. `details.fields` lists each problem |
+| `invalid_image` | Not a decodable JPEG, PNG, or WebP |
+| `image_too_large` | Over 8 MB or 4096 px on a side |
+| `invalid_cursor` | The pagination cursor is malformed — do not construct these by hand |
+
+### Biometrics
+
+| Code | Cause |
+| --- | --- |
+| `quality_check_failed` | A gate failed. `details.check` names which one |
+| `no_face_detected` | No face found |
+| `multiple_faces` | More than one face in frame |
+| `duplicate_face_detected` | Matches an existing subject. `details.matched_subject_id` |
+| `subject_not_enrolled` | No active face profile for this subject |
+| `model_mismatch` | Template predates a model upgrade. Re-enroll the subject |
+
+### Account
+
+| Code | Cause |
+| --- | --- |
+| `quota_exceeded` | Monthly limit reached on a Free plan |
+| `key_revoked` | The key was revoked |
+| `ip_not_allowed` | Source address outside the key's allowlist |
+
+## Retrying
+
+Retry `429`, `500`, `502`, `503`, and `504`. Never retry a `4xx` other than `429`
+— the request will fail identically every time.
+
+```ts
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const retryable = [429, 500, 502, 503, 504].includes(error.status);
+      if (!retryable || i === attempts - 1) throw error;
+
+      // Exponential backoff with jitter. Without jitter, every client that
+      // failed together retries together and reproduces the spike.
+      const base = error.status === 429 ? Number(error.headers["retry-after"] ?? 1) : 2 ** i;
+      await sleep(base * 1000 + Math.random() * 500);
+    }
+  }
+  throw new Error("unreachable");
+}
+```
+
+Pair retries with an `Idempotency-Key` so a retried enrollment or verification
+cannot create a duplicate or double-charge your quota.
+
+## Getting help
+
+Include the `request_id`. It appears in the response header, the response body,
+and our logs — it usually resolves a report in one query rather than a
+conversation.

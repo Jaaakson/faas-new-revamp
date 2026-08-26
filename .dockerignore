@@ -1,0 +1,32 @@
+# Keep the build context small: every file here would otherwise be uploaded to
+# the daemon and invalidate layer caches on unrelated changes.
+.git
+.github
+.husky
+.claude
+docs
+node_modules
+**/node_modules
+**/.next
+**/out
+**/dist
+**/build
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.turbo
+**/coverage
+**/htmlcov
+**/playwright-report
+**/test-results
+.env
+.env.*
+!.env.example
+*.md
+!apps/api/README.md
+.vscode
+.idea
+.DS_Store

@@ -1,0 +1,138 @@
+# ==============================================================================
+# Fvas — local development stack
+#
+#   docker compose up -d
+#   docker compose exec api alembic upgrade head
+#
+# Web  http://localhost:3001
+# API  http://localhost:8001   (Swagger at /docs)
+# ==============================================================================
+
+name: fvas
+
+services:
+  postgres:
+    # pgvector image, not plain postgres: the extension must exist before the
+    # first migration runs.
+    image: pgvector/pgvector:pg16
+    container_name: fvas-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fvas
+    ports:
+      # Host port is configurable because a locally installed PostgreSQL owns
+      # 5432 on many machines. Docker still reports the mapping as bound in
+      # that case — it silently loses the race — so the failure surfaces later
+      # as "password authentication failed", pointing at the wrong database.
+      # Set POSTGRES_PORT=5433 in .env if you hit that.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fvas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: fvas-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: development
+    container_name: fvas-api
+    env_file: .env
+    environment:
+      # Override the host-oriented values in .env with service names.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/fvas
+      REDIS_URL: redis://redis:6379/0
+      LOG_FORMAT: console
+    ports:
+      # Host port 8001 -> Container port 8000
+      - "${API_PORT:-8001}:8000"
+    volumes:
+      - ./apps/api:/app
+      # Anonymous volume keeps the container's .venv from being shadowed by the
+      # host bind mount, which would otherwise hide every installed package.
+      - /app/.venv
+      # Named volume persists the ~350 MB model download across `compose down`.
+      - models:/home/fvas/.insightface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Internal check should point to the original container port (8000)
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: development
+    container_name: fvas-web
+    environment:
+      # Browser-facing: inlined into the client bundle, so it must be the
+      # address a user's browser can reach (external port).
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8001}
+      NEXT_PUBLIC_APP_URL: http://localhost:${WEB_PORT:-3001}
+      # Server-facing: the BFF route handlers run inside this container, where
+      # localhost is the web container itself. They reach the API by service
+      # name over the Compose network (internal port).
+      API_INTERNAL_URL: http://api:8000
+      WATCHPACK_POLLING: "true"
+    ports:
+      # Host port 3001 -> Container port 3000
+      - "${WEB_PORT:-3001}:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      # Keep container-installed dependencies and build cache off the host mount.
+      - /app/node_modules
+      - /app/apps/web/.next
+    depends_on:
+      api:
+        # `service_healthy`, not a bare dependency. Without it the web container
+        # starts while the API is still loading models, the first page render
+        # fails its data fetch, and the user sees an error on a stack that is
+        # actually fine seconds later.
+        condition: service_healthy
+    healthcheck:
+      # Next's dev server compiles the first route on demand, so a cold start
+      # can take 30–60 s before anything answers. start_period covers that;
+      # without it the container is marked unhealthy while it is merely busy.
+      # Internal check points to 3000.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  models:

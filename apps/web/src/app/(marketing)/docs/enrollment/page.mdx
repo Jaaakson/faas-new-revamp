@@ -1,0 +1,142 @@
+export const metadata = {
+  title: "Subjects & enrollment",
+  description:
+    "Create subjects, enroll faces, understand the quality gates, and handle duplicate detection.",
+  alternates: { canonical: "/docs/enrollment" },
+};
+
+# Subjects & enrollment
+
+## Subjects
+
+A subject is one of *your* end users — the person whose face gets verified. It is
+deliberately not the same thing as a Fvas user, who is a member of your team with
+a dashboard login.
+
+| | Fvas user | Subject |
+| --- | --- | --- |
+| Who | Someone on your team | One of your end users |
+| Logs into Fvas | Yes | Never |
+| Identified by | Email | Your own `external_id` |
+| Scale | Tens | Millions |
+
+`external_id` is unique within your organization, so you can address a subject by
+your own identifier without storing ours:
+
+<CreateSubjectSample />
+
+## Enrollment
+
+Enrollment turns images into **templates** — 512-dimension vectors. The images
+are discarded once the templates exist, unless your organization has explicitly
+enabled retention.
+
+<EnrollSample />
+
+### Why three images
+
+Each image becomes its own template, and verification takes the best match across
+all of them. Templates covering slightly different poses absorb the variation
+that real capture conditions introduce. It roughly doubles enrollment time and
+pays for itself immediately, because enrollment happens once and verification
+happens continuously.
+
+Ask for a straight-on shot, then a slight turn left, then a slight turn right.
+Do not ask for extreme angles — beyond about 30° of yaw the model degrades
+sharply and you will store a template that never matches.
+
+## Quality gates
+
+Seven checks run **before** anything is stored. A bad template poisons every
+future verification against it, so it is far better to reject a capture than to
+accept a weak one.
+
+| Gate | Requirement | Why |
+| --- | --- | --- |
+| Face count | Exactly one | An unexpected second person in frame is a signal, not noise |
+| Face size | ≥ 112 px between the eyes | Below this the model interpolates detail that is not there |
+| Sharpness | ≥ 0.35 | Motion blur is the top cause of false rejection in the field |
+| Brightness | 0.25 – 0.85 | Under- and over-exposure both collapse texture |
+| Contrast | ≥ 0.10 | Flat images carry little identity signal |
+| Pose | \|yaw\| ≤ 25°, \|pitch\| ≤ 20°, \|roll\| ≤ 20° | Accuracy falls off sharply past ~30° |
+| Detector confidence | ≥ 0.60 | Low confidence usually means a partial or occluded face |
+
+Gates are **stricter at enrollment than at verification**. Someone enrolling is
+cooperative and can retry; someone authenticating at 11pm in a badly lit
+warehouse cannot. Applying enrollment-grade strictness at verification produces a
+system that is technically accurate and practically unusable.
+
+A failure names the gate:
+
+```json
+{
+  "error": {
+    "code": "quality_check_failed",
+    "message": "Face is too small in the frame.",
+    "details": { "check": "min_face_size", "value": 78, "required": 112 },
+    "request_id": "req_01HQZX8K4M2N"
+  }
+}
+```
+
+Show that reason to your user. "Move closer" beats "invalid image" by a wide
+margin — the second one makes people give up.
+
+## Duplicate detection
+
+Before creating a profile, Fvas searches your existing templates for a
+near-identical face. A match returns `409`:
+
+```json
+{
+  "error": {
+    "code": "duplicate_face_detected",
+    "message": "This face closely matches an existing enrolled subject.",
+    "details": {
+      "matched_subject_id": "sub_01HQZX7J3L1M",
+      "similarity": 0.734,
+      "threshold": 0.6,
+      "override_with": "check_duplicates=false"
+    }
+  }
+}
+```
+
+This is a decision point, not a hard block. Legitimate cases exist — someone
+re-registering after an account merge, for example. We surface it, log it, and
+let a human choose, recording which human chose.
+
+The duplicate threshold (0.6) is deliberately higher than the match threshold
+(0.38), because a false positive here blocks a legitimate user from onboarding at
+all.
+
+<Callout variant="info" title="Scoped to your tenant">
+  Duplicate search never crosses an organization boundary. Your templates are
+  compared only against your own.
+</Callout>
+
+## Re-enrolling
+
+Enrolling an already-enrolled subject creates a **new profile version**. The old
+one is marked superseded, not deleted, so history stays auditable while
+verification always uses the active profile.
+
+Re-enroll when appearance has changed materially, or when you see a subject's
+success rate declining in analytics.
+
+## Deleting biometric data
+
+```bash
+curl -X DELETE https://api.fvas.io/v1/subjects/sub_01HQZX8K4M2N7P \
+  -H "Authorization: Bearer $FVAS_API_KEY"
+```
+
+Template rows are **physically deleted**, not flagged. A soft-deleted biometric
+template is still retained biometric data, which is exactly what a deletion
+request forbids. The deletion is recorded in the audit log so you can evidence it
+later.
+
+<Callout variant="warning" title="This cannot be undone">
+  Verification history is retained for audit, but the templates are gone. The
+  subject must re-enroll to be verifiable again.
+</Callout>

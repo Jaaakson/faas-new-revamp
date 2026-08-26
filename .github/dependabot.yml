@@ -1,0 +1,50 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # One PR per ecosystem cluster. Fifteen individual dependency PRs a week
+      # get ignored; three grouped ones get reviewed.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom", "next", "eslint-config-next"]
+      tooling:
+        patterns: ["eslint*", "typescript", "prettier*", "vitest", "@vitejs/*", "@testing-library/*"]
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*", "tw-animate-css"]
+
+  - package-ecosystem: pip
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      fastapi:
+        patterns: ["fastapi", "starlette", "uvicorn*", "pydantic*"]
+      database:
+        patterns: ["sqlalchemy*", "alembic", "asyncpg"]
+      tooling:
+        patterns: ["ruff", "mypy", "pytest*"]
+
+  - package-ecosystem: docker
+    directories: ["/apps/api", "/apps/web"]
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

@@ -1,0 +1,127 @@
+export const metadata = {
+  title: "Data Processing Addendum",
+  description:
+    "The processor terms governing biometric data: scope, security measures, sub-processors, breach notification, and deletion.",
+  alternates: { canonical: "/legal/dpa" },
+};
+
+# Data Processing Addendum
+
+**Last updated:** 31 July 2026
+
+This addendum governs our processing of personal data on your behalf. Where it
+conflicts with the Terms of Service, this document controls for data processing.
+
+## 1. Roles
+
+You are the **controller**. Fvas is the **processor**. We process personal data
+only on your documented instructions, which are given through your use of the
+API and your organization settings.
+
+## 2. Scope of processing
+
+| | |
+| --- | --- |
+| **Subject matter** | Face verification |
+| **Duration** | For as long as your account is active |
+| **Nature** | Template extraction, storage, comparison, and logging |
+| **Purpose** | Verifying that a person matches a previously enrolled subject |
+| **Data types** | Biometric templates, quality metrics, verification records, and — only if you enable retention — facial images |
+| **Data subjects** | The end users you choose to enroll |
+
+Special-category data under GDPR Article 9 and specific personal data under UU
+PDP No. 27/2022 is in scope. Establishing a lawful basis for it is your
+responsibility as controller.
+
+## 3. Our obligations
+
+We will:
+
+- Process personal data only on your documented instructions.
+- Notify you if an instruction appears to breach applicable law.
+- Ensure personnel with access are bound by confidentiality.
+- Implement the technical and organisational measures in section 4.
+- Assist you with data subject requests, DPIAs, and regulator enquiries.
+- Delete or return personal data on termination, at your choice.
+- Make available the information needed to demonstrate compliance, and allow
+  audits under reasonable notice.
+
+## 4. Security measures
+
+| Area | Measure |
+| --- | --- |
+| Encryption in transit | TLS 1.3 minimum, HSTS with preload |
+| Encryption at rest | AES-256 on database volumes and backups |
+| Credentials | Argon2id for passwords, SHA-256 for API keys |
+| Access control | Role-based, least privilege, no standing production access; break-glass is time-boxed, approved, and logged |
+| Tenant isolation | Enforced at the data-access layer, verified by automated cross-tenant tests on every endpoint |
+| Data minimisation | Templates only; raw images discarded unless you enable retention |
+| Logging | Append-only audit log; secrets, templates, and image bytes are never logged |
+| Availability | Encrypted nightly backups, point-in-time recovery, tested restores |
+| Development | Peer-reviewed changes, dependency and secret scanning in CI |
+
+## 5. Sub-processors
+
+You authorise us to use sub-processors for infrastructure, database hosting, and
+transactional email. A current list is available on request.
+
+We remain liable for their performance, impose equivalent obligations on them by
+contract, and will give at least 30 days' notice before adding a sub-processor
+that handles biometric data — during which you may object and terminate without
+penalty.
+
+## 6. International transfers
+
+Data is processed in the region configured for your organization; the default is
+`ap-southeast`. Transfers outside that region require your instruction and are
+made under an appropriate transfer mechanism.
+
+Data residency guarantees, including single-region and on-premise deployment, are
+available on Enterprise.
+
+## 7. Breach notification
+
+We will notify you **without undue delay and within 72 hours** of becoming aware
+of a personal data breach, with the nature of the breach, categories and
+approximate number of affected records, likely consequences, and the measures
+taken.
+
+**Any exposure of biometric templates is treated as maximum severity by default.**
+A password can be changed; a face cannot. Our incident process assumes this
+without requiring a judgement call under pressure.
+
+## 8. Data subject requests
+
+If we receive a request directly from one of your end users, we will not respond
+substantively. We will forward it to you within 5 business days, since you hold
+the consent record and the relationship.
+
+We support access, deletion, and portability through the API:
+
+- **Access** — retrieve the subject and its verification history
+- **Deletion** — `DELETE /v1/subjects/{id}` physically removes templates
+- **Portability** — export verification history as CSV or JSON
+
+## 9. Deletion and return
+
+On termination you may export your data for 30 days. After that, all personal
+data is deleted from live systems immediately and from backups within the 30-day
+backup rotation.
+
+Deleting a subject removes its templates immediately. Verification history is
+retained for audit with biometric fields removed, unless you request full
+erasure.
+
+## 10. Audits
+
+You may audit compliance once per 12 months with 30 days' notice, or more often
+if a regulator requires it. We will respond to reasonable security
+questionnaires.
+
+We are not currently SOC 2 certified. Controls are being built to be auditable,
+and we will say so rather than imply a certification we do not hold.
+
+## 11. Contact
+
+- Data protection: hello@fvas.io
+- Security incidents: security@fvas.io

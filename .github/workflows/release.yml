@@ -1,0 +1,217 @@
+# Release pipeline: test → build → migrate → deploy → smoke → rollback.
+#
+# The ordering is the design. Two things in particular are not negotiable:
+#
+#   * **Migrations run before the new image serves traffic, and a failed
+#     migration blocks the deploy.** A deploy that half-migrates and then
+#     serves is worse than one that never started.
+#   * **The smoke test gates the release.** It exercises the product — create,
+#     enroll, verify, revoke — not just `/health`. Every one of those has
+#     broken in this codebase while `/health` stayed green.
+#
+# Rollback is automatic and re-runs the smoke test against the restored
+# revision, because a rollback nobody verified is just a second deploy.
+#
+# NOTE: this workflow has never executed. It requires a container registry, a
+# host, and a managed database that do not exist for this project yet. The YAML
+# is validated and the steps it calls (`scripts/smoke_test.py`, `alembic
+# upgrade`) are exercised locally, but "a merge to main deploys automatically"
+# is unproven and is recorded as such in docs/10-roadmap.md.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  # One release at a time. Two concurrent deploys racing on the same database
+  # migration is the fastest way to a corrupt schema.
+  group: release-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}/api
+
+jobs:
+  # ── Gate ───────────────────────────────────────────────────────────────────
+  verify:
+    name: Tests must pass before anything is built
+    uses: ./.github/workflows/ci.yml
+
+  # ── Build ──────────────────────────────────────────────────────────────────
+  build:
+    name: Build and push the API image
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Derive an immutable tag
+        # The commit SHA, never `latest`. A rollback needs to name a specific
+        # image, and `latest` cannot be named.
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          target: production
+          # The face extra and the baked models. A production image that would
+          # fall back to the fake engine cannot start anyway — the lifespan
+          # refuses — so building without it would produce an image that is
+          # guaranteed to fail its own healthcheck.
+          build-args: INSTALL_FACE_EXTRA=1
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+
+  # ── Migrate ────────────────────────────────────────────────────────────────
+  migrate:
+    name: Apply migrations
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+        working-directory: apps/api
+
+      - name: Back up before migrating
+        # A migration is the most common cause of a restore. Taking the backup
+        # immediately before is what makes the restore point useful.
+        env:
+          PGURL: ${{ secrets.DATABASE_URL_ADMIN }}
+        run: |
+          pg_dump "$PGURL" -Fc --no-owner > "pre-migrate-${GITHUB_SHA::12}.dump"
+          ls -la pre-migrate-*.dump
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pre-migrate-backup
+          path: apps/api/pre-migrate-*.dump
+          retention-days: 30
+
+      - name: Migrate
+        # Runs as the *owner* role, not the application role. The role that can
+        # change the schema is deliberately not the role that serves requests
+        # (migration 0009).
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_ADMIN }}
+        working-directory: apps/api
+        run: uv run alembic upgrade head
+
+      - name: Confirm the schema matches the models
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_ADMIN }}
+        working-directory: apps/api
+        run: uv run alembic check
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy and smoke test
+    needs: [build, migrate]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: previous
+        name: Record the currently-live revision
+        # Captured before the deploy, so rollback has somewhere to go. Doing
+        # this after would capture the revision we are about to replace it with.
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          echo "revision=$(./scripts/deploy.sh current)" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.build.outputs.tag }}
+        run: ./scripts/deploy.sh release "$IMAGE_REF"
+
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+        working-directory: apps/api
+
+      - name: Smoke test
+        id: smoke
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        working-directory: apps/api
+        run: |
+          uv run python ../../scripts/smoke_test.py \
+            --base "${{ vars.API_BASE_URL }}" \
+            --web "${{ vars.WEB_BASE_URL }}" \
+            --email "$SMOKE_EMAIL" \
+            --password "$SMOKE_PASSWORD" \
+            --expect-engine insightface
+
+      - name: Roll back
+        if: failure() && steps.previous.outputs.revision != ''
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: ./scripts/deploy.sh rollback "${{ steps.previous.outputs.revision }}"
+
+      - name: Verify the rollback actually restored service
+        # A rollback nobody verified is just a second unverified deploy.
+        if: failure() && steps.previous.outputs.revision != ''
+        working-directory: apps/api
+        env:
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          uv run python ../../scripts/smoke_test.py \
+            --base "${{ vars.API_BASE_URL }}" \
+            --web "${{ vars.WEB_BASE_URL }}" \
+            --email "$SMOKE_EMAIL" \
+            --password "$SMOKE_PASSWORD"
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### Release ${{ needs.build.outputs.tag }}"
+            echo ""
+            echo "| Step | Result |"
+            echo "| --- | --- |"
+            echo "| Migrations | ${{ needs.migrate.result }} |"
+            echo "| Deploy | ${{ job.status }} |"
+            echo "| Smoke test | ${{ steps.smoke.outcome }} |"
+            echo "| Previous revision | \`${{ steps.previous.outputs.revision }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

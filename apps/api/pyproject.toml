@@ -1,0 +1,151 @@
+[project]
+name = "fvas-api"
+version = "0.1.0"
+description = "Fvas — Face Authentication Platform API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic[email]>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "redis>=5.2.1",
+    "structlog>=24.4.0",
+    "python-ulid>=3.0.0",
+    "python-multipart>=0.0.20",
+    "argon2-cffi>=25.1.0",
+    "pyjwt>=2.13.0",
+    # Embeddings are numpy arrays everywhere, including under FakeFaceEngine,
+    # and pgvector provides the SQLAlchemy column type. Both are small.
+    "numpy>=2.2.0",
+    "pgvector>=0.3.6",
+    # Image decoding at the API boundary. Deliberately NOT in the optional
+    # `face` extra: validating and decoding a caller's frame has to work
+    # under FACE_ENGINE=fake, which is what the whole test suite runs on.
+    "pillow>=11.0.0",
+    # Webhook delivery. A runtime dependency, not a test one: the delivery
+    # worker posts signed payloads to customer endpoints in production.
+    "httpx>=0.28.0",
+]
+
+[project.optional-dependencies]
+# The real inference stack. Deliberately optional: it is ~500 MB installed and
+# insightface compiles from source, while `FACE_ENGINE=fake` needs none of it.
+# CI and the default `uv sync` skip this entirely, which is what keeps the test
+# suite at seconds rather than minutes. Install with `uv sync --extra face`.
+face = [
+    "insightface>=0.7.3",
+    "onnxruntime>=1.20.1",
+    "opencv-python-headless>=4.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.1",
+    "aiosqlite>=0.20.0",
+    "ruff>=0.8.4",
+    "mypy>=1.14.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "TID",       # tidy imports
+    "RUF",       # ruff-specific
+    "ASYNC",     # async correctness
+    "S",         # bandit
+]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI's Depends() in defaults is the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: assert is the point of a test.
+# S105/S106: fixture values that look like secrets to bandit but are literals
+#            chosen precisely to exercise the validation that rejects them.
+"tests/*" = ["S101", "S105", "S106"]
+"alembic/env.py" = ["ALL"]
+# S105 flags any constant whose *name* mentions a token or password. These are
+# event names and a bearer-scheme label, not secrets.
+"app/modules/auth/models.py" = ["S105"]
+"app/modules/auth/schemas.py" = ["S105"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# ── mypy ──────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+# ── pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/cli.py", "*/__init__.py"]
+# SQLAlchemy's asyncio support bridges to the sync DBAPI through greenlets, so
+# service code that awaits the database runs inside one. Coverage's default
+# tracer does not follow greenlets and silently reports those lines as missed —
+# it put `AuthService` at 27% while a probe proved the body executes on every
+# login. Without this, any coverage gate measures the wrong thing.
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+# Measured at 85% overall with every service and repository above 77%
+# (2026-08-01). CI fails below 80.
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
+
+# The `face` extra is optional and ships no type stubs. CI type-checks without
+# it installed, so these imports are unresolvable by design.
+[[tool.mypy.overrides]]
+module = ["insightface.*", "onnxruntime", "cv2"]
+ignore_missing_imports = true

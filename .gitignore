@@ -1,0 +1,62 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Database dumps. `scripts/backup.sh` writes here, and a dump contains every
+# row the database had — including biometric templates. Committing one would
+# put customer data in git history permanently.
+backups/
+*.dump
+
+.env
+.env.*
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.turbo/
+.vercel/
+npm-debug.log*
+yarn-error.log*
+
+# ── ML models (large; downloaded or baked into the image) ─────────────────────
+.insightface/
+models/
+*.onnx
+*.pkl
+
+# ── Local data ────────────────────────────────────────────────────────────────
+*.db
+*.sqlite3
+pgdata/
+uploads/
+tmp/
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+playwright-report/
+test-results/
+.playwright/
+
+# ── Editors / OS ──────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
